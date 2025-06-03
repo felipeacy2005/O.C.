@@ -41,6 +41,16 @@ bool salaState = false;
 bool pasilloState = false;
 bool cocinaState = false;
 
+// Nuevo código para encender garaje, el sensor está defectuoso :c
+// Definimos los les que van a ser del garaje
+const int LED_GARAJE_1_PIN = 15;
+const int LED_GARAJE_2_PIN = 2;
+const int LED_GARAJE_3_PIN = 21;
+// Bueno, no tengo más pines que pueda utilizar así estos son los últimos 3 xd
+// Voy a defenir una variable boleana ya que o los tres leds estan encendidos o 
+// ninguno lo está, en este caso lo defino para que siempre estén apagados.
+bool garajeState = false;
+
 // Handler para la ruta principal, buenas prácticas
 // empezamos con nuestra funciones, donde respondemos con un mensaje en la app para encontrar los datos del sensor
 void handleRoot() {
@@ -157,16 +167,41 @@ void handleCocinaOff() {
   Serial.println("Comando: Cocina OFF");
 }
 
+// hacemos la función como la venimos haciendo en todo el código
+// pues esto optimiza la lectura, haciendo que todo vaya más rápido
+// y como habia dicho anteriormente, o estan apagados o encendidos todos los leds
+// de la siguiente forma
+void handleGarajeToggle() {
+  // esto indica que será la negación de la variable definica
+  garajeState = !garajeState;
+  if (garajeState) {
+    // mandamos el mensaje por pantalla, en caso de errores
+    Serial.println("Comando: Garaje ON");
+    digitalWrite(LED_GARAJE_1_PIN, HIGH);
+    digitalWrite(LED_GARAJE_2_PIN, HIGH);
+    digitalWrite(LED_GARAJE_3_PIN, HIGH);
+    server.send(200, "text/plain", "Garaje ON");
+  } else {
+    Serial.println("Comando: Garaje OFF");
+    digitalWrite(LED_GARAJE_1_PIN, LOW);
+    digitalWrite(LED_GARAJE_2_PIN, LOW);
+    digitalWrite(LED_GARAJE_3_PIN, LOW);
+    server.send(200, "text/plain", "Garaje OFF");
+  }
+}
+
 // Función para que la app sepa los estados actuales de los leds,
 // si se apaga y enciende la ESP-32 obviamente todos están apagados xd
 // lo definimos antes en las variables booleanas con true
 void handleLedStatus() {
   // de igual forma se genera un JSON para enviar los estados de los leds
   // es decir 0 o 1 en pocas palabras
+  // se envian los datos con su key:value
   DynamicJsonDocument doc(128); 
   doc["sala"] = salaState;
   doc["pasillo"] = pasilloState;
   doc["cocina"] = cocinaState;
+  doc["garaje"] = garajeState;
   String jsonResponse;
   serializeJson(doc, jsonResponse);
   // se envia la respuesta en formato JSON al servidor y
@@ -211,6 +246,19 @@ void setup() {
   // me gusta imprimir los pasos por pantalla :D
   // buenas prácticas
   Serial.println("LEDs individuales inicializados (apagados).");
+
+  // Configuración de pines para los leds del garaje 
+  pinMode(LED_GARAJE_1_PIN, OUTPUT);
+  pinMode(LED_GARAJE_2_PIN, OUTPUT);
+  pinMode(LED_GARAJE_3_PIN, OUTPUT);
+// Asegurar que los LEDs del garaje estén apagados al inicio
+// al parecer el ping del GPIO2 se enciende con la placa: investigar porque pasa eso
+  digitalWrite(LED_GARAJE_1_PIN, LOW);
+  digitalWrite(LED_GARAJE_2_PIN, LOW);
+  digitalWrite(LED_GARAJE_3_PIN, LOW);
+// mandamos el mensaje del proceso, tengo que estar seguro
+// así se detectan el errores más rápido
+  Serial.println("LEDs del Garaje inicializados (apagados).");
   // Enviamos un mensaje a la red que estamos conectando
   // y con el wifi.begin enviamos el nombre de la red y contraseña
   Serial.print("Conectando a ");
@@ -253,10 +301,11 @@ void setup() {
   server.on("/pasillo_off", HTTP_GET, handlePasilloOff);
   server.on("/cocina_on", HTTP_GET, handleCocinaOn);
   server.on("/cocina_off", HTTP_GET, handleCocinaOff);
+  // agregamos la nueva función y deberia optimizar las funciones
+  // con un único endpoind para alterar los estados sin tanto on/off
+  server.on("/garaje_toggle", HTTP_GET, handleGarajeToggle);
   server.on("/led_status", HTTP_GET, handleLedStatus); 
-
-
-
+  
   // correccion de errores inesperados al conectar con el servidor
   // donde si no se conecta (puede que esté ocupado o se ocupe despues de un rato) enviaremos un error
   // en este caso enviaremos (404 Not Found)
@@ -306,7 +355,8 @@ void loop() {
       lastHumidity = humidityStr.toFloat();
       lastTemperature = temperatureStr.toFloat();
       // imprimimos los resultados con printf f de (float) y le indicamos el formato
-      // donde %.1f es un número flotante con un decimal
+      // donde %.1f es un número flotante con un decimal y el \n es un salto de linea 
+      // esto no junta el código, se ve mejor con el salto de linea
       Serial.printf("Humedad: %.1f%%, Temperatura: %.1f°C\n", lastHumidity, lastTemperature);
     } else {
       // si se recibió un -1 en algunos de los datos del arduino, nos dará un mensaje de error
